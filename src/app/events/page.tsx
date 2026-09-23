@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type EventListItem = {
@@ -13,6 +13,14 @@ type EventListItem = {
 
 // Screen 2: "Parking for Events" list — matches the wireframe's event list screen.
 export default function EventsPage() {
+  return (
+    <Suspense>
+      <EventsList />
+    </Suspense>
+  );
+}
+
+function EventsList() {
   const [events, setEvents] = useState<EventListItem[]>([]);
   const router = useRouter();
   const plate = useSearchParams().get("plate") ?? "";

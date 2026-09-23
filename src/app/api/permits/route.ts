@@ -22,6 +22,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
 
+  const eventLot = await prisma.eventLot.findUnique({
+    where: { eventId_lotId: { eventId, lotId } },
+  });
+  if (!eventLot) {
+    return NextResponse.json({ error: "Selected lot is not valid for this event" }, { status: 400 });
+  }
+
   const permit = await prisma.permit.create({
     data: {
       licensePlate: licensePlate.toUpperCase(),

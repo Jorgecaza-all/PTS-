@@ -12,6 +12,8 @@ import {
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
 
+type EventLot = { id: string; name: string; accessType: "OPEN_LOT" | "GATE_ACCESS" };
+
 // Screen 3: "Parking for [Event]" — Name + payment, matching the wireframe.
 // The Stripe PaymentElement automatically shows Apple Pay / Google Pay buttons on
 // supported devices ABOVE the card fields — no separate wiring needed for wallets,
@@ -19,6 +21,8 @@ const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY 
 export default function EventDetailPage({ params }: { params: { id: string } }) {
   const [name, setName] = useState("");
   const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [lots, setLots] = useState<EventLot[]>([]);
+  const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
   const plate = useSearchParams().get("plate") ?? "";
 
   useEffect(() => {
@@ -29,6 +33,15 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     })
       .then((r) => r.json())
       .then((data) => setClientSecret(data.clientSecret));
+
+    fetch(`/api/events/${params.id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setLots(data.lots ?? []);
+        // Skip the picker entirely when there's only one lot — every extra tap
+        // costs us with the older, less tech-savvy users this app is built for.
+        if (data.lots?.length === 1) setSelectedLotId(data.lots[0].id);
+      });
   }, [params.id]);
 
   return (
@@ -42,9 +55,31 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         onChange={(e) => setName(e.target.value)}
       />
 
-      {clientSecret && (
+      {lots.length > 1 && (
+        <div className="mb-4">
+          <p className="text-sm font-medium mb-2">Choose a lot or garage</p>
+          <div className="flex flex-col gap-2">
+            {lots.map((lot) => (
+              <button
+                key={lot.id}
+                type="button"
+                onClick={() => setSelectedLotId(lot.id)}
+                className={`text-left border-2 rounded-lg px-4 py-3 ${
+                  selectedLotId === lot.id
+                    ? "border-sky-400 bg-sky-50"
+                    : "border-gray-300"
+                }`}
+              >
+                {lot.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {clientSecret && selectedLotId && (
         <Elements stripe={stripePromise} options={{ clientSecret }}>
-          <PaymentForm eventId={params.id} plate={plate} name={name} />
+          <PaymentForm eventId={params.id} plate={plate} name={name} lotId={selectedLotId} />
         </Elements>
       )}
 
@@ -57,7 +92,17 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   );
 }
 
-function PaymentForm({ eventId, plate, name }: { eventId: string; plate: string; name: string }) {
+function PaymentForm({
+  eventId,
+  plate,
+  name,
+  lotId,
+}: {
+  eventId: string;
+  plate: string;
+  name: string;
+  lotId: string;
+}) {
   const stripe = useStripe();
   const elements = useElements();
   const router = useRouter();
@@ -78,15 +123,13 @@ function PaymentForm({ eventId, plate, name }: { eventId: string; plate: string;
       return;
     }
 
-    // TODO: lotId should come from a lot-selection step if an event has multiple lots —
-    // for now this assumes the API assigns/accepts the first available lot for the event.
     const res = await fetch("/api/permits", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         licensePlate: plate,
         eventId,
-        lotId: "REPLACE_WITH_SELECTED_LOT_ID",
+        lotId,
         nameOnPermit: name,
         permitType: "purchased",
         paymentRef: paymentIntent?.id,

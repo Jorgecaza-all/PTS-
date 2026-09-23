@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// Reads live data on every request — never prerender/cache this at build time.
+export const dynamic = "force-dynamic";
+
 // GET /api/events — list upcoming events with their lots, for the event-list screen.
 export async function GET() {
   const events = await prisma.event.findMany({
