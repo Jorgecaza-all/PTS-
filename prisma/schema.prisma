@@ -1,0 +1,80 @@
+// Prisma schema — matches the data model in ut-parking-app-spec.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LotAccessType {
+  OPEN_LOT
+  GATE_ACCESS
+}
+
+enum PermitType {
+  purchased
+  staff_issued
+  dv_exempt
+}
+
+enum PermitStatus {
+  active
+  expired
+}
+
+model Lot {
+  id         String        @id @default(cuid())
+  name       String        // e.g. "Lot 37", "SJG - San Jacinto Garage"
+  accessType LotAccessType
+
+  events     EventLot[]
+  permits    Permit[]
+}
+
+model Event {
+  id        String     @id @default(cuid())
+  name      String     // e.g. "Bass Concert Hall - Fall Recital"
+  date      DateTime
+  price     Int        // flat price in cents, applies to every lot/garage in `lots`
+  createdAt DateTime   @default(now())
+
+  lots      EventLot[]
+  permits   Permit[]
+}
+
+// join table: which lots/garages are valid for a given event (all share the event's flat price)
+model EventLot {
+  id      String @id @default(cuid())
+  eventId String
+  lotId   String
+
+  event Event @relation(fields: [eventId], references: [id])
+  lot   Lot   @relation(fields: [lotId], references: [id])
+
+  @@unique([eventId, lotId])
+}
+
+model Permit {
+  id               String       @id @default(cuid())
+  licensePlate     String
+  permitType       PermitType
+  eventId          String
+  lotId            String
+  nameOnPermit     String
+  validUntil       DateTime
+  plateChanged     Boolean      @default(false) // true once the one-time plate correction has been used
+  paymentRef       String?      // Stripe PaymentIntent/charge id — null for staff_issued/dv_exempt
+  dvPlacardNumber  String?      // only set when permitType = dv_exempt
+  status           PermitStatus @default(active)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id])
+  lot   Lot   @relation(fields: [lotId], references: [id])
+
+  @@index([licensePlate])
+  @@index([eventId])
+}

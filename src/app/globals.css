@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Large, easy-to-tap inputs and buttons throughout — this app's users skew older.
+   Keep every field and button at least this size; don't shrink for density. */
+input,
+button {
+  font-size: 1.125rem;
+}
