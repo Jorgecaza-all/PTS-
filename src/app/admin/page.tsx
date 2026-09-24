@@ -30,7 +30,7 @@ export default function AdminPage() {
 }
 
 function AdminTool({ onLogout }: { onLogout: () => void }) {
-  const [tab, setTab] = useState<"issue" | "search">("issue");
+  const [tab, setTab] = useState<"issue" | "search" | "events">("issue");
 
   const handleLogout = async () => {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -47,6 +47,9 @@ function AdminTool({ onLogout }: { onLogout: () => void }) {
           <TabButton active={tab === "search"} onClick={() => setTab("search")}>
             Search Permits
           </TabButton>
+          <TabButton active={tab === "events"} onClick={() => setTab("events")}>
+            Manage Events
+          </TabButton>
         </div>
         <div className="flex items-center gap-4">
           <a href="/enforcement" className="text-sm underline text-gray-600">
@@ -58,7 +61,9 @@ function AdminTool({ onLogout }: { onLogout: () => void }) {
         </div>
       </div>
 
-      {tab === "issue" ? <IssuePermitForm /> : <SearchPermits />}
+      {tab === "issue" && <IssuePermitForm />}
+      {tab === "search" && <SearchPermits />}
+      {tab === "events" && <ManageEvents />}
     </div>
   );
 }
@@ -92,6 +97,16 @@ function useAdminEvents() {
       .then((data) => setEvents(Array.isArray(data) ? data : []));
   }, []);
   return events;
+}
+
+function useAllLots() {
+  const [lots, setLots] = useState<EventLot[]>([]);
+  useEffect(() => {
+    fetch("/api/admin/lots")
+      .then((r) => r.json())
+      .then((data) => setLots(Array.isArray(data) ? data : []));
+  }, []);
+  return lots;
 }
 
 // Issue a staff_issued permit (comp/exemption) directly against a plate + event.
@@ -273,6 +288,131 @@ function SearchPermits() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Create an event, assign its lots/garages, and set the flat price that applies to
+// every lot listed (README priority 4 — events/lots were previously only seeded
+// manually). All lots on an event share the same price per the spec.
+function ManageEvents() {
+  const lots = useAllLots();
+  const [events, setEvents] = useState<AdminEvent[]>([]);
+  const [name, setName] = useState("");
+  const [dateTime, setDateTime] = useState("");
+  const [priceDollars, setPriceDollars] = useState("");
+  const [selectedLotIds, setSelectedLotIds] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchEvents = () => {
+    fetch("/api/admin/events")
+      .then((r) => r.json())
+      .then((data) => setEvents(Array.isArray(data) ? data : []));
+  };
+
+  useEffect(fetchEvents, []);
+
+  const toggleLot = (lotId: string) => {
+    setSelectedLotIds((prev) => (prev.includes(lotId) ? prev.filter((id) => id !== lotId) : [...prev, lotId]));
+  };
+
+  const priceCents = Math.round(parseFloat(priceDollars || "0") * 100);
+  const canSubmit = name.trim() && dateTime && !isNaN(priceCents) && priceCents >= 0 && selectedLotIds.length > 0;
+
+  const handleCreate = async () => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError("");
+    const res = await fetch("/api/admin/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        date: new Date(dateTime).toISOString(),
+        price: priceCents,
+        lotIds: selectedLotIds,
+      }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      const data = await res.json();
+      setError(data.error ?? "Failed to create event");
+      return;
+    }
+    setName("");
+    setDateTime("");
+    setPriceDollars("");
+    setSelectedLotIds([]);
+    fetchEvents();
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
+        <h3 className="font-medium">Create Event</h3>
+        <input
+          className="border-2 border-gray-800 rounded-lg px-4 py-4"
+          placeholder="Event Name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <input
+          type="datetime-local"
+          className="border-2 border-gray-800 rounded-lg px-4 py-4"
+          value={dateTime}
+          onChange={(e) => setDateTime(e.target.value)}
+        />
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          className="border-2 border-gray-800 rounded-lg px-4 py-4"
+          placeholder="Price (USD, applies to every lot below)"
+          value={priceDollars}
+          onChange={(e) => setPriceDollars(e.target.value)}
+        />
+
+        <div>
+          <p className="text-sm font-medium mb-2">Lots/garages for this event</p>
+          <div className="flex flex-col gap-2 max-h-64 overflow-y-auto border rounded-lg p-2">
+            {lots.map((lot) => (
+              <label key={lot.id} className="flex items-center gap-2 px-2 py-1">
+                <input
+                  type="checkbox"
+                  checked={selectedLotIds.includes(lot.id)}
+                  onChange={() => toggleLot(lot.id)}
+                />
+                <span>{lot.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <button
+          onClick={handleCreate}
+          disabled={submitting || !canSubmit}
+          className="bg-sky-400 hover:bg-sky-500 disabled:opacity-50 text-white font-semibold rounded-full py-4"
+        >
+          {submitting ? "Creating..." : "Create Event"}
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="font-medium">Existing Events</h3>
+        {events.length === 0 && <p className="text-gray-500 text-center">No events yet.</p>}
+        {events.map((ev) => (
+          <div key={ev.id} className="border rounded-lg p-4">
+            <div className="font-medium">{ev.name}</div>
+            <div className="text-sm text-gray-600">
+              {new Date(ev.date).toLocaleString()} — ${(ev.price / 100).toFixed(2)}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">{ev.lots.map((l) => l.name).join(", ")}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
