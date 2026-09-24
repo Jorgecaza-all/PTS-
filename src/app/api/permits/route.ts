@@ -22,6 +22,12 @@ export async function POST(req: Request) {
   if (permitType === "purchased" && !paymentRef) {
     return NextResponse.json({ error: "paymentRef required for purchased permits" }, { status: 400 });
   }
+  if (permitType === "dv_exempt" && !dvPlacardNumber?.trim()) {
+    return NextResponse.json({ error: "dvPlacardNumber required for DV permits" }, { status: 400 });
+  }
+  if (!licensePlate?.trim() || !nameOnPermit?.trim() || !eventId || !lotId) {
+    return NextResponse.json({ error: "licensePlate, nameOnPermit, eventId, and lotId are required" }, { status: 400 });
+  }
 
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) {
