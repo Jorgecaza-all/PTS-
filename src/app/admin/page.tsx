@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { StaffLogin } from "@/components/StaffLogin";
 
 type EventLot = { id: string; name: string; accessType: "OPEN_LOT" | "GATE_ACCESS" };
 type AdminEvent = { id: string; name: string; date: string; price: number; lots: EventLot[] };
@@ -22,51 +23,8 @@ type Permit = {
 // password-based login to production.
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
-  const [password, setPassword] = useState("");
-  const [loggingIn, setLoggingIn] = useState(false);
-  const [loginError, setLoginError] = useState("");
 
-  const handleLogin = async () => {
-    setLoggingIn(true);
-    setLoginError("");
-    const res = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    setLoggingIn(false);
-    if (res.ok) {
-      setAuthed(true);
-    } else {
-      setLoginError("Incorrect password");
-    }
-  };
-
-  if (!authed) {
-    return (
-      <div className="flex flex-col gap-4">
-        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
-          Placeholder login for dev/testing only. Replace with UT SSO before launch.
-        </p>
-        <input
-          type="password"
-          className="border-2 border-gray-800 rounded-lg px-4 py-4"
-          placeholder="Staff password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-        />
-        {loginError && <p className="text-sm text-red-600">{loginError}</p>}
-        <button
-          onClick={handleLogin}
-          disabled={loggingIn}
-          className="bg-sky-400 hover:bg-sky-500 text-white font-semibold rounded-full py-4"
-        >
-          {loggingIn ? "Logging in..." : "Log in"}
-        </button>
-      </div>
-    );
-  }
+  if (!authed) return <StaffLogin onAuthed={() => setAuthed(true)} />;
 
   return <AdminTool onLogout={() => setAuthed(false)} />;
 }
@@ -90,9 +48,14 @@ function AdminTool({ onLogout }: { onLogout: () => void }) {
             Search Permits
           </TabButton>
         </div>
-        <button onClick={handleLogout} className="text-sm underline text-gray-600">
-          Log out
-        </button>
+        <div className="flex items-center gap-4">
+          <a href="/enforcement" className="text-sm underline text-gray-600">
+            Gate check
+          </a>
+          <button onClick={handleLogout} className="text-sm underline text-gray-600">
+            Log out
+          </button>
+        </div>
       </div>
 
       {tab === "issue" ? <IssuePermitForm /> : <SearchPermits />}
