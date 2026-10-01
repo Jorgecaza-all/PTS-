@@ -1,12 +1,21 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 // Screen 1: License plate entry — matches the original wireframe exactly.
 // Keep this to a single field. Don't add anything else here.
 export default function PlateEntryPage() {
-  const [plate, setPlate] = useState("");
+  return (
+    <Suspense>
+      <PlateEntry />
+    </Suspense>
+  );
+}
+
+function PlateEntry() {
+  // Prefills from ?plate= so "back" from the event list doesn't lose what was typed.
+  const [plate, setPlate] = useState(useSearchParams().get("plate") ?? "");
   const router = useRouter();
 
   const handleGo = () => {

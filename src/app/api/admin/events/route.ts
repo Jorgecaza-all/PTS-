@@ -21,6 +21,7 @@ export async function GET(req: Request) {
       name: e.name,
       startDate: e.startDate,
       endDate: e.endDate,
+      endedAt: e.endedAt,
       price: e.price,
       lots: e.lots.map((el) => ({ id: el.lot.id, name: el.lot.name, accessType: el.lot.accessType })),
     }))

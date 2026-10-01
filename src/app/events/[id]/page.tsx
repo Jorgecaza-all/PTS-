@@ -18,7 +18,7 @@ const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY 
 const MOCK_PAYMENTS = process.env.NEXT_PUBLIC_MOCK_PAYMENTS === "true";
 
 type EventLot = { id: string; name: string; accessType: "OPEN_LOT" | "GATE_ACCESS" };
-type EventDetail = { id: string; name: string; price: number; lots: EventLot[] };
+type EventDetail = { id: string; name: string; price: number; lots: EventLot[]; endedAt: string | null };
 
 // Screen 3: "Parking for [Event]" — Name + payment, matching the wireframe.
 // The Stripe PaymentElement automatically shows Apple Pay / Google Pay buttons on
@@ -56,8 +56,15 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
 
   return (
     <div>
+      <a href={`/events?plate=${encodeURIComponent(plate)}`} className="text-sm underline text-gray-600">
+        ← Back
+      </a>
       <h2 className="text-xl font-semibold text-center mb-6">Parking for this Event</h2>
 
+      {event?.endedAt ? (
+        <p className="text-center text-red-600 font-medium">This event has ended and is no longer accepting payments.</p>
+      ) : (
+        <>
       <input
         className="border-2 border-gray-800 rounded-lg px-4 py-4 w-full mb-4"
         placeholder="Name of Person"
@@ -102,6 +109,8 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           I have a DV placard
         </a>
       </p>
+        </>
+      )}
     </div>
   );
 }
@@ -122,10 +131,12 @@ function MockPaymentForm({
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   const handlePay = async () => {
     if (!name.trim() || !plate) return;
     setSubmitting(true);
+    setError("");
 
     const mockRes = await fetch("/api/stripe/mock-pay", {
       method: "POST",
@@ -146,8 +157,13 @@ function MockPaymentForm({
         paymentRef,
       }),
     });
-    const permit = await res.json();
-    router.push(`/confirmation/${permit.id}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setSubmitting(false);
+      setError(data.error ?? "This event is no longer available. Please go back and pick another.");
+      return;
+    }
+    router.push(`/confirmation/${data.id}`);
   };
 
   return (
@@ -155,6 +171,7 @@ function MockPaymentForm({
       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 text-center">
         Demo mode — no real payment is processed.
       </p>
+      {error && <p className="text-sm text-red-600 text-center">{error}</p>}
       <button
         onClick={handlePay}
         disabled={submitting || !name.trim()}
@@ -209,8 +226,13 @@ function PaymentForm({
         paymentRef: paymentIntent?.id,
       }),
     });
-    const permit = await res.json();
-    router.push(`/confirmation/${permit.id}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setSubmitting(false);
+      alert(data.error ?? "This event is no longer available. Please go back and pick another.");
+      return;
+    }
+    router.push(`/confirmation/${data.id}`);
   };
 
   return (

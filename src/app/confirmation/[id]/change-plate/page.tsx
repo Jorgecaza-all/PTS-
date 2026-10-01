@@ -28,6 +28,9 @@ export default function ChangePlatePage({ params }: { params: { id: string } }) 
 
   return (
     <div className="flex flex-col gap-4">
+      <a href={`/confirmation/${params.id}`} className="text-sm underline text-gray-600">
+        ← Back
+      </a>
       <h2 className="text-xl font-semibold text-center">License Plate Change</h2>
       <p className="text-center font-medium text-red-600">NOTE, YOU CAN ONLY CHANGE IT ONCE</p>
       <input

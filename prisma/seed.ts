@@ -22,14 +22,23 @@ const GARAGES = [
 
 // Numbered open lots confirmed against both the wireframes and the hand-annotated map.
 // TODO: confirm this is the complete list with UT Parking & Transportation — these are just the ones seen so far.
-const OPEN_LOTS = ["Lot 37", "Lot 38", "Lot 39", "Lot 40", "Lot 118", "LHN - Longhorn Lot (Baseball/Softball area)"];
+// DMN - Dedman: open-lot area along Robert Dedman Dr per the spec; confirm exact boundary with UT Parking.
+const OPEN_LOTS = [
+  "Lot 37",
+  "Lot 38",
+  "Lot 39",
+  "Lot 40",
+  "Lot 118",
+  "LHN - Longhorn Lot (Baseball/Softball area)",
+  "DMN - Dedman",
+];
 
 async function main() {
   for (const g of GARAGES) {
-    await prisma.lot.create({ data: { name: g.name, accessType: "GATE_ACCESS" } });
+    await prisma.lot.upsert({ where: { name: g.name }, update: {}, create: { name: g.name, accessType: "GATE_ACCESS" } });
   }
   for (const name of OPEN_LOTS) {
-    await prisma.lot.create({ data: { name, accessType: "OPEN_LOT" } });
+    await prisma.lot.upsert({ where: { name }, update: {}, create: { name, accessType: "OPEN_LOT" } });
   }
   console.log("Seeded lots.");
 }

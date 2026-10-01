@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 // GET /api/events — list upcoming events with their lots, for the event-list screen.
 export async function GET() {
   const events = await prisma.event.findMany({
-    where: { endDate: { gte: new Date() } },
+    where: { endDate: { gte: new Date() }, endedAt: null },
     orderBy: { startDate: "asc" },
     include: { lots: { include: { lot: true } } },
   });

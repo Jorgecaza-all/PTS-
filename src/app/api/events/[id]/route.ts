@@ -19,6 +19,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     name: event.name,
     startDate: event.startDate,
     endDate: event.endDate,
+    endedAt: event.endedAt,
     price: event.price,
     lots: event.lots.map((el) => ({ id: el.lot.id, name: el.lot.name, accessType: el.lot.accessType })),
   });

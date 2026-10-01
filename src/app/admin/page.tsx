@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import { StaffLogin } from "@/components/StaffLogin";
 
 type EventLot = { id: string; name: string; accessType: "OPEN_LOT" | "GATE_ACCESS" };
-type AdminEvent = { id: string; name: string; startDate: string; endDate: string; price: number; lots: EventLot[] };
+type AdminEvent = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  endedAt: string | null;
+  price: number;
+  lots: EventLot[];
+};
 type Permit = {
   id: string;
   licensePlate: string;
@@ -33,7 +41,7 @@ export default function AdminPage() {
 }
 
 function AdminTool({ onLogout }: { onLogout: () => void }) {
-  const [tab, setTab] = useState<"issue" | "search" | "events" | "refunds">("issue");
+  const [tab, setTab] = useState<"issue" | "search" | "events" | "refunds" | "stats">("issue");
 
   const handleLogout = async () => {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -56,6 +64,9 @@ function AdminTool({ onLogout }: { onLogout: () => void }) {
           <TabButton active={tab === "refunds"} onClick={() => setTab("refunds")}>
             Refund Requests
           </TabButton>
+          <TabButton active={tab === "stats"} onClick={() => setTab("stats")}>
+            Stats
+          </TabButton>
         </div>
         <div className="flex items-center gap-4">
           <a href="/enforcement" className="text-sm underline text-gray-600">
@@ -71,6 +82,7 @@ function AdminTool({ onLogout }: { onLogout: () => void }) {
       {tab === "search" && <SearchPermits />}
       {tab === "events" && <ManageEvents />}
       {tab === "refunds" && <RefundRequests />}
+      {tab === "stats" && <Stats />}
     </div>
   );
 }
@@ -119,7 +131,7 @@ function useAllLots() {
 // Issue a staff_issued permit (comp/exemption) directly against a plate + event.
 // Spec 4.4: eliminates the old "issue paper exemption, reconcile later" loop.
 function IssuePermitForm() {
-  const events = useAdminEvents();
+  const events = useAdminEvents().filter((e) => !e.endedAt);
   const [eventId, setEventId] = useState("");
   const [lotId, setLotId] = useState("");
   const [plate, setPlate] = useState("");
@@ -331,6 +343,12 @@ function ManageEvents() {
     setSelectedLotIds((prev) => (prev.includes(lotId) ? prev.filter((id) => id !== lotId) : [...prev, lotId]));
   };
 
+  const handleEnd = async (id: string) => {
+    if (!confirm("End this event? It will be hidden from the public list and stop accepting new permits.")) return;
+    await fetch(`/api/admin/events/${id}/end`, { method: "POST" });
+    fetchEvents();
+  };
+
   const priceCents = Math.round(parseFloat(priceDollars || "0") * 100);
   const canSubmit =
     name.trim() && startDateTime && endDateTime && !isNaN(priceCents) && priceCents >= 0 && selectedLotIds.length > 0;
@@ -437,7 +455,16 @@ function ManageEvents() {
         {events.length === 0 && <p className="text-gray-500 text-center">No events yet.</p>}
         {events.map((ev) => (
           <div key={ev.id} className="border rounded-lg p-4">
-            <div className="font-medium">{ev.name}</div>
+            <div className="flex items-center justify-between">
+              <div className="font-medium">{ev.name}</div>
+              {ev.endedAt ? (
+                <span className="text-xs font-semibold uppercase text-gray-500">Ended</span>
+              ) : (
+                <button onClick={() => handleEnd(ev.id)} className="text-xs text-red-600 underline">
+                  End Event
+                </button>
+              )}
+            </div>
             <div className="text-sm text-gray-600">
               {new Date(ev.startDate).toLocaleString()} – {new Date(ev.endDate).toLocaleString()} — $
               {(ev.price / 100).toFixed(2)}
@@ -491,6 +518,43 @@ function RefundRequests() {
           <div className="text-sm mt-1">{r.reason}</div>
           <div className="text-xs text-gray-500 mt-1">Contact: {r.contact}</div>
         </div>
+      ))}
+    </div>
+  );
+}
+
+type PermitCounts = { total: number; purchased: number; dv_exempt: number; staff_issued: number };
+type StatsData = { overall: PermitCounts; byEvent: (PermitCounts & { eventId: string; eventName: string })[] };
+
+// Counts every Permit row (groupBy, not the capped search list) overall and per event.
+function Stats() {
+  const [stats, setStats] = useState<StatsData | null>(null);
+
+  const load = () => fetch("/api/admin/stats").then((r) => r.json()).then(setStats);
+  useEffect(() => void load(), []);
+
+  if (!stats) return <p className="text-gray-500 text-center">Loading...</p>;
+
+  const Row = ({ label, c }: { label: string; c: PermitCounts }) => (
+    <div className="border rounded-lg p-4">
+      <div className="font-medium">{label}</div>
+      <div className="text-sm text-gray-600 mt-1">
+        Total {c.total} · Purchased {c.purchased} · DV {c.dv_exempt} · Staff {c.staff_issued}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <h3 className="font-medium">Permit Counts</h3>
+        <button onClick={load} className="text-sm underline text-gray-600">
+          Refresh
+        </button>
+      </div>
+      <Row label="All events" c={stats.overall} />
+      {stats.byEvent.map((e) => (
+        <Row key={e.eventId} label={e.eventName} c={e} />
       ))}
     </div>
   );

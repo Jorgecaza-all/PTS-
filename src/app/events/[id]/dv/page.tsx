@@ -13,6 +13,7 @@ export default function DvPlacardPage({ params }: { params: { id: string } }) {
   const [placardNumber, setPlacardNumber] = useState("");
   const [lots, setLots] = useState<EventLot[]>([]);
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const plate = useSearchParams().get("plate") ?? "";
   const router = useRouter();
 
@@ -22,11 +23,13 @@ export default function DvPlacardPage({ params }: { params: { id: string } }) {
       .then((data) => {
         setLots(data.lots ?? []);
         if (data.lots?.length === 1) setSelectedLotId(data.lots[0].id);
+        if (data.endedAt) setError("This event has ended and is no longer accepting DV permits.");
       });
   }, [params.id]);
 
   const handleConfirm = async () => {
     if (!name.trim() || !placardNumber.trim() || !plate || !selectedLotId) return;
+    setError("");
 
     const res = await fetch("/api/permits", {
       method: "POST",
@@ -40,12 +43,19 @@ export default function DvPlacardPage({ params }: { params: { id: string } }) {
         dvPlacardNumber: placardNumber,
       }),
     });
-    const permit = await res.json();
-    router.push(`/confirmation/${permit.id}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error ?? "This event is no longer available.");
+      return;
+    }
+    router.push(`/confirmation/${data.id}`);
   };
 
   return (
     <div className="flex flex-col gap-4">
+      <a href={`/events/${params.id}?plate=${encodeURIComponent(plate)}`} className="text-sm underline text-gray-600">
+        ← Back
+      </a>
       <h2 className="text-xl font-semibold text-center mb-2">DV Placard Parking</h2>
       <input
         className="border-2 border-gray-800 rounded-lg px-4 py-4"
@@ -82,9 +92,11 @@ export default function DvPlacardPage({ params }: { params: { id: string } }) {
         </div>
       )}
 
+      {error && <p className="text-sm text-red-600 text-center">{error}</p>}
+
       <button
         onClick={handleConfirm}
-        disabled={!selectedLotId}
+        disabled={!selectedLotId || !!error}
         className="bg-sky-400 hover:bg-sky-500 disabled:opacity-50 text-white font-semibold rounded-full py-4"
       >
         Confirm

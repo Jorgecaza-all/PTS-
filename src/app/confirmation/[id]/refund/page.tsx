@@ -38,12 +38,18 @@ export default function RefundRequestPage({ params }: { params: { id: string } }
         <a href={`/confirmation/${params.id}`} className="underline text-sm">
           Back to confirmation
         </a>
+        <a href="/" className="underline text-sm">
+          Return to home
+        </a>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
+      <a href={`/confirmation/${params.id}`} className="text-sm underline text-gray-600">
+        ← Back
+      </a>
       <h2 className="text-xl font-semibold text-center">Request a Refund</h2>
       <p className="text-center text-sm text-gray-600">
         Tell us why, and how to reach you — the office of parking will follow up.

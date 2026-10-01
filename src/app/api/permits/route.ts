@@ -34,6 +34,9 @@ export async function POST(req: Request) {
   if (!event) {
     return NextResponse.json({ error: "Event not found" }, { status: 404 });
   }
+  if (event.endedAt) {
+    return NextResponse.json({ error: "This event has ended and is no longer accepting payments" }, { status: 410 });
+  }
 
   const eventLot = await prisma.eventLot.findUnique({
     where: { eventId_lotId: { eventId, lotId } },

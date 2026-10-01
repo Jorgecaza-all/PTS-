@@ -34,6 +34,9 @@ function EventsList() {
 
   return (
     <div>
+      <a href={`/?plate=${encodeURIComponent(plate)}`} className="text-sm underline text-gray-600">
+        ← Back
+      </a>
       <h2 className="text-xl font-semibold text-center mb-6">Parking for Events</h2>
       <div className="flex flex-col gap-3">
         {events.map((ev) => (
