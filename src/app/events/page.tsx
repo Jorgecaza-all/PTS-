@@ -6,7 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 type EventListItem = {
   id: string;
   name: string;
-  date: string;
+  startDate: string;
+  endDate: string;
   price: number;
   lots: string[];
 };
@@ -43,7 +44,7 @@ function EventsList() {
           >
             <div className="font-medium">{ev.name}</div>
             <div className="text-sm text-gray-600">
-              {new Date(ev.date).toLocaleString()} — {ev.lots.join(", ")}
+              {new Date(ev.startDate).toLocaleString()} — {ev.lots.join(", ")}
             </div>
             <div className="text-sm text-gray-800 mt-1">${(ev.price / 100).toFixed(2)}</div>
           </button>

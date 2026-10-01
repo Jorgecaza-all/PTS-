@@ -37,7 +37,8 @@ model Lot {
 model Event {
   id        String     @id @default(cuid())
   name      String     // e.g. "Bass Concert Hall - Fall Recital"
-  date      DateTime
+  startDate DateTime
+  endDate   DateTime
   price     Int        // flat price in cents, applies to every lot/garage in `lots`
   createdAt DateTime   @default(now())
 
@@ -64,17 +65,41 @@ model Permit {
   eventId          String
   lotId            String
   nameOnPermit     String
+  // Validity window per UT Parking policy: event start minus 90 min through event
+  // end plus 90 min.
+  validFrom        DateTime
   validUntil       DateTime
   plateChanged     Boolean      @default(false) // true once the one-time plate correction has been used
   paymentRef       String?      // Stripe PaymentIntent/charge id — null for staff_issued/dv_exempt
   dvPlacardNumber  String?      // only set when permitType = dv_exempt
   status           PermitStatus @default(active)
+  // GATE_ACCESS entry/exit scan timestamps — one scan in, one scan out (spec 4.5).
+  // Not used for OPEN_LOT permits, which are checked by plate presence, not scanned.
+  enteredAt        DateTime?
+  exitedAt         DateTime?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
   event Event @relation(fields: [eventId], references: [id])
   lot   Lot   @relation(fields: [lotId], references: [id])
+  refundRequests RefundRequest[]
 
   @@index([licensePlate])
   @@index([eventId])
+}
+
+// A guest's self-service refund request (mirrors the plate-change self-service flow,
+// but for refunds, which need staff/office review rather than an automatic action).
+// Notifying the office is a stub (see src/lib/email.ts) until UT Parking provides a
+// real mailbox/API to send to.
+model RefundRequest {
+  id        String   @id @default(cuid())
+  permitId  String
+  reason    String
+  contact   String   // email or phone the office can reach the requester at
+  createdAt DateTime @default(now())
+
+  permit Permit @relation(fields: [permitId], references: [id])
+
+  @@index([permitId])
 }

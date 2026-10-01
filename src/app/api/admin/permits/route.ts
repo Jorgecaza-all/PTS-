@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireStaffAuth } from "@/lib/staffAuth";
+import { permitWindowForEvent } from "@/lib/permits";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Selected lot is not valid for this event" }, { status: 400 });
   }
 
+  const { validFrom, validUntil } = permitWindowForEvent(event);
+
   const permit = await prisma.permit.create({
     data: {
       licensePlate: licensePlate.toUpperCase(),
@@ -61,7 +64,8 @@ export async function POST(req: Request) {
       lotId,
       nameOnPermit,
       permitType: "staff_issued",
-      validUntil: event.date, // TODO: confirm exact expiry rule with UT Parking (event end time + buffer?)
+      validFrom,
+      validUntil,
     },
     include: { event: true, lot: true },
   });

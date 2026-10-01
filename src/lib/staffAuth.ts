@@ -3,29 +3,30 @@ import { NextResponse } from "next/server";
 
 // Placeholder staff auth ONLY — see README/spec: real login must go through UT's
 // SSO (Shibboleth/SAML/OAuth) once UT IT provides connection details. This exists
-// so the admin tool can be built/tested without blocking on that.
+// so the admin/enforcement tools can be built/tested without blocking on that.
 //
-// The dev password itself never reaches the browser: the login route checks it
-// server-side and sets a cookie containing a hash of it, so cookie theft doesn't
-// reveal the password and the client bundle never sees STAFF_DEV_PASSWORD.
+// Neither credential reaches the browser after login: the login route checks them
+// server-side and sets a cookie containing a hash of both, so cookie theft doesn't
+// reveal the username/password and the client bundle never sees them.
 export const STAFF_COOKIE_NAME = "staff_session";
 
 function expectedCookieValue(): string | null {
-  const secret = process.env.STAFF_DEV_PASSWORD;
-  if (!secret) return null;
-  return createHash("sha256").update(secret).digest("hex");
+  const username = process.env.STAFF_DEV_USERNAME;
+  const password = process.env.STAFF_DEV_PASSWORD;
+  if (!username || !password) return null;
+  return createHash("sha256").update(`${username}:${password}`).digest("hex");
 }
 
-export function checkStaffPassword(password: string): boolean {
+export function checkStaffCredentials(username: string, password: string): boolean {
   const expected = expectedCookieValue();
-  if (!expected || !password) return false;
-  const candidate = createHash("sha256").update(password).digest("hex");
+  if (!expected || !username || !password) return false;
+  const candidate = createHash("sha256").update(`${username}:${password}`).digest("hex");
   return timingSafeEqual(Buffer.from(candidate), Buffer.from(expected));
 }
 
 export function staffSessionCookieValue(): string {
   const expected = expectedCookieValue();
-  if (!expected) throw new Error("STAFF_DEV_PASSWORD is not set");
+  if (!expected) throw new Error("STAFF_DEV_USERNAME/STAFF_DEV_PASSWORD are not set");
   return expected;
 }
 

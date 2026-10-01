@@ -7,8 +7,8 @@ export const dynamic = "force-dynamic";
 // GET /api/events — list upcoming events with their lots, for the event-list screen.
 export async function GET() {
   const events = await prisma.event.findMany({
-    where: { date: { gte: new Date() } },
-    orderBy: { date: "asc" },
+    where: { endDate: { gte: new Date() } },
+    orderBy: { startDate: "asc" },
     include: { lots: { include: { lot: true } } },
   });
 
@@ -16,7 +16,8 @@ export async function GET() {
     events.map((e) => ({
       id: e.id,
       name: e.name,
-      date: e.date,
+      startDate: e.startDate,
+      endDate: e.endDate,
       price: e.price,
       lots: e.lots.map((el) => el.lot.name),
     }))

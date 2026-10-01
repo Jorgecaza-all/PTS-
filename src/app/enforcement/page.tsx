@@ -9,16 +9,20 @@ type PermitRecord = {
   licensePlate: string;
   permitType: "purchased" | "staff_issued" | "dv_exempt";
   status: "active" | "expired";
+  validFrom: string;
   validUntil: string;
+  enteredAt: string | null;
+  exitedAt: string | null;
   valid: boolean;
   event: { name: string };
-  lot: { name: string };
+  lot: { name: string; accessType: "OPEN_LOT" | "GATE_ACCESS" };
 };
 
 // Enforcement / gate-check (spec 4.5, README priority 3): one lookup path for all
 // three permit types. GATE_ACCESS garages scan the QR (a barcode-scanner "keyboard
-// wedge" typing the permit id works the same as a camera scan here); OPEN_LOT staff
-// walk the lot and check by plate. Same permits table, same validity check either way.
+// wedge" typing the permit id works the same as a camera scan here) and record entry/
+// exit; OPEN_LOT staff walk the lot and check by plate (no scanning — just presence).
+// Same permits table, same validity check either way.
 export default function EnforcementPage() {
   const [authed, setAuthed] = useState(false);
 
@@ -36,6 +40,7 @@ function EnforcementTool({ onLogout }: { onLogout: () => void }) {
   const [checking, setChecking] = useState(false);
   const [results, setResults] = useState<PermitRecord[] | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [scanError, setScanError] = useState("");
 
   useEffect(() => {
     fetch("/api/admin/lots")
@@ -52,6 +57,7 @@ function EnforcementTool({ onLogout }: { onLogout: () => void }) {
     setChecking(true);
     setResults(null);
     setNotFound(false);
+    setScanError("");
 
     if (mode === "permitId") {
       if (!permitId.trim()) {
@@ -79,6 +85,21 @@ function EnforcementTool({ onLogout }: { onLogout: () => void }) {
       setResults(data.permits ?? []);
       setNotFound((data.permits ?? []).length === 0);
     }
+  };
+
+  const handleScan = async (permitId: string, direction: "in" | "out") => {
+    setScanError("");
+    const res = await fetch(`/api/enforcement/permits/${permitId}/scan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ direction }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setScanError(data.error ?? "Scan failed");
+      return;
+    }
+    setResults((prev) => (prev ?? []).map((p) => (p.id === permitId ? { ...data.permit, valid: data.valid } : p)));
   };
 
   const anyValid = results?.some((r) => r.valid) ?? false;
@@ -153,6 +174,8 @@ function EnforcementTool({ onLogout }: { onLogout: () => void }) {
         </p>
       )}
 
+      {scanError && <p className="text-sm text-red-600 text-center">{scanError}</p>}
+
       {results && results.length > 0 && (
         <div className="flex flex-col gap-2">
           <p
@@ -176,8 +199,28 @@ function EnforcementTool({ onLogout }: { onLogout: () => void }) {
                 {p.event.name} — {p.lot.name}
               </div>
               <div className="text-xs text-gray-500 mt-1">
-                {p.permitType} · status {p.status} · valid until {new Date(p.validUntil).toLocaleString()}
+                {p.permitType} · status {p.status} · valid {new Date(p.validFrom).toLocaleString()} –{" "}
+                {new Date(p.validUntil).toLocaleString()}
               </div>
+
+              {p.lot.accessType === "GATE_ACCESS" && mode === "permitId" && (
+                <div className="flex items-center gap-3 mt-3">
+                  <button
+                    onClick={() => handleScan(p.id, "in")}
+                    disabled={!!p.enteredAt}
+                    className="flex-1 bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white text-sm font-semibold rounded-full py-2"
+                  >
+                    {p.enteredAt ? `In: ${new Date(p.enteredAt).toLocaleTimeString()}` : "Scan In"}
+                  </button>
+                  <button
+                    onClick={() => handleScan(p.id, "out")}
+                    disabled={!p.enteredAt || !!p.exitedAt}
+                    className="flex-1 bg-gray-700 hover:bg-gray-800 disabled:opacity-40 text-white text-sm font-semibold rounded-full py-2"
+                  >
+                    {p.exitedAt ? `Out: ${new Date(p.exitedAt).toLocaleTimeString()}` : "Scan Out"}
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -4,16 +4,19 @@ import { useEffect, useState } from "react";
 import { StaffLogin } from "@/components/StaffLogin";
 
 type EventLot = { id: string; name: string; accessType: "OPEN_LOT" | "GATE_ACCESS" };
-type AdminEvent = { id: string; name: string; date: string; price: number; lots: EventLot[] };
+type AdminEvent = { id: string; name: string; startDate: string; endDate: string; price: number; lots: EventLot[] };
 type Permit = {
   id: string;
   licensePlate: string;
   permitType: "purchased" | "staff_issued" | "dv_exempt";
   nameOnPermit: string;
+  validFrom: string;
   validUntil: string;
   status: "active" | "expired";
+  enteredAt: string | null;
+  exitedAt: string | null;
   event: { id: string; name: string };
-  lot: { id: string; name: string };
+  lot: { id: string; name: string; accessType: "OPEN_LOT" | "GATE_ACCESS" };
 };
 
 // Staff admin — PLACEHOLDER auth only (password checked server-side, see
@@ -30,7 +33,7 @@ export default function AdminPage() {
 }
 
 function AdminTool({ onLogout }: { onLogout: () => void }) {
-  const [tab, setTab] = useState<"issue" | "search" | "events">("issue");
+  const [tab, setTab] = useState<"issue" | "search" | "events" | "refunds">("issue");
 
   const handleLogout = async () => {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -50,6 +53,9 @@ function AdminTool({ onLogout }: { onLogout: () => void }) {
           <TabButton active={tab === "events"} onClick={() => setTab("events")}>
             Manage Events
           </TabButton>
+          <TabButton active={tab === "refunds"} onClick={() => setTab("refunds")}>
+            Refund Requests
+          </TabButton>
         </div>
         <div className="flex items-center gap-4">
           <a href="/enforcement" className="text-sm underline text-gray-600">
@@ -64,6 +70,7 @@ function AdminTool({ onLogout }: { onLogout: () => void }) {
       {tab === "issue" && <IssuePermitForm />}
       {tab === "search" && <SearchPermits />}
       {tab === "events" && <ManageEvents />}
+      {tab === "refunds" && <RefundRequests />}
     </div>
   );
 }
@@ -157,7 +164,7 @@ function IssuePermitForm() {
         <option value="">Select an event</option>
         {events.map((ev) => (
           <option key={ev.id} value={ev.id}>
-            {ev.name} — {new Date(ev.date).toLocaleString()}
+            {ev.name} — {new Date(ev.startDate).toLocaleString()}
           </option>
         ))}
       </select>
@@ -239,7 +246,7 @@ function SearchPermits() {
         <option value="">All events</option>
         {events.map((ev) => (
           <option key={ev.id} value={ev.id}>
-            {ev.name} — {new Date(ev.date).toLocaleString()}
+            {ev.name} — {new Date(ev.startDate).toLocaleString()}
           </option>
         ))}
       </select>
@@ -282,8 +289,14 @@ function SearchPermits() {
               </div>
               <div className="text-sm text-gray-600">{p.nameOnPermit}</div>
               <div className="text-xs text-gray-500 mt-1">
-                {p.permitType} · valid until {new Date(p.validUntil).toLocaleString()}
+                {p.permitType} · valid {new Date(p.validFrom).toLocaleString()} – {new Date(p.validUntil).toLocaleString()}
               </div>
+              {p.lot.accessType === "GATE_ACCESS" && (
+                <div className="text-xs text-gray-500">
+                  {p.enteredAt ? `In: ${new Date(p.enteredAt).toLocaleString()}` : "Not entered"}
+                  {p.exitedAt ? ` · Out: ${new Date(p.exitedAt).toLocaleString()}` : ""}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -299,7 +312,8 @@ function ManageEvents() {
   const lots = useAllLots();
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [name, setName] = useState("");
-  const [dateTime, setDateTime] = useState("");
+  const [startDateTime, setStartDateTime] = useState("");
+  const [endDateTime, setEndDateTime] = useState("");
   const [priceDollars, setPriceDollars] = useState("");
   const [selectedLotIds, setSelectedLotIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -318,7 +332,8 @@ function ManageEvents() {
   };
 
   const priceCents = Math.round(parseFloat(priceDollars || "0") * 100);
-  const canSubmit = name.trim() && dateTime && !isNaN(priceCents) && priceCents >= 0 && selectedLotIds.length > 0;
+  const canSubmit =
+    name.trim() && startDateTime && endDateTime && !isNaN(priceCents) && priceCents >= 0 && selectedLotIds.length > 0;
 
   const handleCreate = async () => {
     if (!canSubmit) return;
@@ -329,7 +344,8 @@ function ManageEvents() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name,
-        date: new Date(dateTime).toISOString(),
+        startDate: new Date(startDateTime).toISOString(),
+        endDate: new Date(endDateTime).toISOString(),
         price: priceCents,
         lotIds: selectedLotIds,
       }),
@@ -341,7 +357,8 @@ function ManageEvents() {
       return;
     }
     setName("");
-    setDateTime("");
+    setStartDateTime("");
+    setEndDateTime("");
     setPriceDollars("");
     setSelectedLotIds([]);
     fetchEvents();
@@ -357,12 +374,27 @@ function ManageEvents() {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <input
-          type="datetime-local"
-          className="border-2 border-gray-800 rounded-lg px-4 py-4"
-          value={dateTime}
-          onChange={(e) => setDateTime(e.target.value)}
-        />
+        <div>
+          <label className="text-sm text-gray-600">Start</label>
+          <input
+            type="datetime-local"
+            className="border-2 border-gray-800 rounded-lg px-4 py-4 w-full"
+            value={startDateTime}
+            onChange={(e) => setStartDateTime(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="text-sm text-gray-600">End</label>
+          <input
+            type="datetime-local"
+            className="border-2 border-gray-800 rounded-lg px-4 py-4 w-full"
+            value={endDateTime}
+            onChange={(e) => setEndDateTime(e.target.value)}
+          />
+        </div>
+        <p className="text-xs text-gray-500 -mt-2">
+          Permits will be valid from 1:30 before start until 1:30 after end.
+        </p>
         <input
           type="number"
           min="0"
@@ -407,12 +439,59 @@ function ManageEvents() {
           <div key={ev.id} className="border rounded-lg p-4">
             <div className="font-medium">{ev.name}</div>
             <div className="text-sm text-gray-600">
-              {new Date(ev.date).toLocaleString()} — ${(ev.price / 100).toFixed(2)}
+              {new Date(ev.startDate).toLocaleString()} – {new Date(ev.endDate).toLocaleString()} — $
+              {(ev.price / 100).toFixed(2)}
             </div>
             <div className="text-xs text-gray-500 mt-1">{ev.lots.map((l) => l.name).join(", ")}</div>
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Staff view of self-service refund requests (spec's open refund question — see
+// /api/permits/[id]/refund-request and src/lib/email.ts). Emailing the office is a
+// stub until UT Parking gives us a real mailbox/API, so this list is how staff
+// actually see requests for now.
+function RefundRequests() {
+  const [requests, setRequests] = useState<
+    Array<{
+      id: string;
+      reason: string;
+      contact: string;
+      createdAt: string;
+      permit: { id: string; licensePlate: string; event: { name: string }; lot: { name: string } };
+    }>
+  >([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/refund-requests")
+      .then((r) => r.json())
+      .then((data) => {
+        setRequests(Array.isArray(data) ? data : []);
+        setLoaded(true);
+      });
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="font-medium">Refund Requests</h3>
+      {loaded && requests.length === 0 && <p className="text-gray-500 text-center">No refund requests.</p>}
+      {requests.map((r) => (
+        <div key={r.id} className="border rounded-lg p-4">
+          <div className="flex justify-between">
+            <span className="font-medium">{r.permit.licensePlate}</span>
+            <span className="text-xs text-gray-500">{new Date(r.createdAt).toLocaleString()}</span>
+          </div>
+          <div className="text-sm text-gray-600">
+            {r.permit.event.name} — {r.permit.lot.name}
+          </div>
+          <div className="text-sm mt-1">{r.reason}</div>
+          <div className="text-xs text-gray-500 mt-1">Contact: {r.contact}</div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -12,7 +12,13 @@ import {
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
 
+// DEMO ONLY — lets the purchase flow be clicked through to confirmation without real
+// Stripe keys/network access. See /api/stripe/mock-pay and the isMockPayment branch
+// in /api/permits. Off by default; never enable this alongside real Stripe keys.
+const MOCK_PAYMENTS = process.env.NEXT_PUBLIC_MOCK_PAYMENTS === "true";
+
 type EventLot = { id: string; name: string; accessType: "OPEN_LOT" | "GATE_ACCESS" };
+type EventDetail = { id: string; name: string; price: number; lots: EventLot[] };
 
 // Screen 3: "Parking for [Event]" — Name + payment, matching the wireframe.
 // The Stripe PaymentElement automatically shows Apple Pay / Google Pay buttons on
@@ -21,28 +27,32 @@ type EventLot = { id: string; name: string; accessType: "OPEN_LOT" | "GATE_ACCES
 export default function EventDetailPage({ params }: { params: { id: string } }) {
   const [name, setName] = useState("");
   const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [lots, setLots] = useState<EventLot[]>([]);
+  const [event, setEvent] = useState<EventDetail | null>(null);
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
   const plate = useSearchParams().get("plate") ?? "";
 
   useEffect(() => {
-    fetch("/api/stripe/create-payment-intent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eventId: params.id }),
-    })
-      .then((r) => r.json())
-      .then((data) => setClientSecret(data.clientSecret));
+    if (!MOCK_PAYMENTS) {
+      fetch("/api/stripe/create-payment-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: params.id }),
+      })
+        .then((r) => r.json())
+        .then((data) => setClientSecret(data.clientSecret));
+    }
 
     fetch(`/api/events/${params.id}`)
       .then((r) => r.json())
       .then((data) => {
-        setLots(data.lots ?? []);
+        setEvent(data);
         // Skip the picker entirely when there's only one lot — every extra tap
         // costs us with the older, less tech-savvy users this app is built for.
         if (data.lots?.length === 1) setSelectedLotId(data.lots[0].id);
       });
   }, [params.id]);
+
+  const lots = event?.lots ?? [];
 
   return (
     <div>
@@ -77,7 +87,11 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         </div>
       )}
 
-      {clientSecret && selectedLotId && (
+      {selectedLotId && MOCK_PAYMENTS && event && (
+        <MockPaymentForm eventId={params.id} plate={plate} name={name} lotId={selectedLotId} price={event.price} />
+      )}
+
+      {selectedLotId && !MOCK_PAYMENTS && clientSecret && (
         <Elements stripe={stripePromise} options={{ clientSecret }}>
           <PaymentForm eventId={params.id} plate={plate} name={name} lotId={selectedLotId} />
         </Elements>
@@ -88,6 +102,66 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
           I have a DV placard
         </a>
       </p>
+    </div>
+  );
+}
+
+// DEMO ONLY — see MOCK_PAYMENTS above.
+function MockPaymentForm({
+  eventId,
+  plate,
+  name,
+  lotId,
+  price,
+}: {
+  eventId: string;
+  plate: string;
+  name: string;
+  lotId: string;
+  price: number;
+}) {
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
+
+  const handlePay = async () => {
+    if (!name.trim() || !plate) return;
+    setSubmitting(true);
+
+    const mockRes = await fetch("/api/stripe/mock-pay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId }),
+    });
+    const { paymentRef } = await mockRes.json();
+
+    const res = await fetch("/api/permits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        licensePlate: plate,
+        eventId,
+        lotId,
+        nameOnPermit: name,
+        permitType: "purchased",
+        paymentRef,
+      }),
+    });
+    const permit = await res.json();
+    router.push(`/confirmation/${permit.id}`);
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 text-center">
+        Demo mode — no real payment is processed.
+      </p>
+      <button
+        onClick={handlePay}
+        disabled={submitting || !name.trim()}
+        className="bg-sky-400 hover:bg-sky-500 disabled:opacity-50 text-white font-semibold rounded-full py-4"
+      >
+        {submitting ? "Processing..." : `Pay $${(price / 100).toFixed(2)}`}
+      </button>
     </div>
   );
 }

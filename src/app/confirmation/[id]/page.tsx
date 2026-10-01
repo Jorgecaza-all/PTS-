@@ -30,13 +30,21 @@ export default function ConfirmationPage({ params }: { params: { id: string } })
       {qrDataUrl && <img src={qrDataUrl} alt="Permit QR code" className="w-48 h-48" />}
 
       <p className="font-medium">
-        PLATE {permit.licensePlate} good until {new Date(permit.validUntil).toLocaleString()} in {permit.lot.name}
+        PLATE {permit.licensePlate} good from {new Date(permit.validFrom).toLocaleString()} until{" "}
+        {new Date(permit.validUntil).toLocaleString()} in {permit.lot.name}
       </p>
       <p className="text-sm text-gray-600">{permit.event.name}</p>
 
-      <a href={`/confirmation/${permit.id}/change-plate`} className="underline text-sm mt-6">
-        Need to change license plate?
-      </a>
+      <div className="flex flex-col gap-2 mt-6">
+        <a href={`/confirmation/${permit.id}/change-plate`} className="underline text-sm">
+          Need to change license plate?
+        </a>
+        {permit.permitType === "purchased" && (
+          <a href={`/confirmation/${permit.id}/refund`} className="underline text-sm">
+            Need a refund?
+          </a>
+        )}
+      </div>
     </div>
   );
 }

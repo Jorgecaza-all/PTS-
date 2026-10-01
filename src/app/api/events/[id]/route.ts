@@ -17,7 +17,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   return NextResponse.json({
     id: event.id,
     name: event.name,
-    date: event.date,
+    startDate: event.startDate,
+    endDate: event.endDate,
     price: event.price,
     lots: event.lots.map((el) => ({ id: el.lot.id, name: el.lot.name, accessType: el.lot.accessType })),
   });
