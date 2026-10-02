@@ -71,7 +71,7 @@ model Permit {
   validFrom        DateTime
   validUntil       DateTime
   plateChanged     Boolean      @default(false) // true once the one-time plate correction has been used
-  paymentRef       String?      // Stripe PaymentIntent/charge id — null for staff_issued/dv_exempt
+  paymentRef       String?      @unique // Stripe PaymentIntent id — null for staff_issued/dv_exempt; unique so a retried/duplicate webhook delivery can't create a second permit
   dvPlacardNumber  String?      // only set when permitType = dv_exempt
   status           PermitStatus @default(active)
   // GATE_ACCESS entry/exit scan timestamps — one scan in, one scan out (spec 4.5).

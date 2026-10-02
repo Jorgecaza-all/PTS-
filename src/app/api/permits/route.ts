@@ -1,29 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripe";
 import { permitWindowForEvent } from "@/lib/permits";
 
 // POST /api/permits
-// Public write path for the two guest-facing permit types: purchased and dv_exempt.
-// staff_issued permits can only be created by staff, via /api/admin/permits — this
-// route rejects that type outright so an anonymous request can't grant itself a comp.
-// body: {
-//   licensePlate, eventId, lotId, nameOnPermit, permitType,
-//   paymentRef?  (Stripe PaymentIntent id — required if permitType = 'purchased')
-//   dvPlacardNumber? (required if permitType = 'dv_exempt')
-// }
+// Public write path for the DV placard flow only. "purchased" permits are created
+// exclusively by the signature-verified Stripe webhook (see /api/stripe/webhook) —
+// never from a client request — and "staff_issued" only via /api/admin/permits.
+// body: { licensePlate, eventId, lotId, nameOnPermit, permitType: 'dv_exempt', dvPlacardNumber }
 export async function POST(req: Request) {
-  const body = await req.json();
-  const { licensePlate, eventId, lotId, nameOnPermit, permitType, paymentRef, dvPlacardNumber } = body;
+  const { licensePlate, eventId, lotId, nameOnPermit, permitType, dvPlacardNumber } = await req.json();
 
-  if (permitType !== "purchased" && permitType !== "dv_exempt") {
+  if (permitType !== "dv_exempt") {
     return NextResponse.json({ error: "Invalid permitType" }, { status: 400 });
   }
-
-  if (permitType === "purchased" && !paymentRef) {
-    return NextResponse.json({ error: "paymentRef required for purchased permits" }, { status: 400 });
-  }
-  if (permitType === "dv_exempt" && !dvPlacardNumber?.trim()) {
+  if (!dvPlacardNumber?.trim()) {
     return NextResponse.json({ error: "dvPlacardNumber required for DV permits" }, { status: 400 });
   }
   if (!licensePlate?.trim() || !nameOnPermit?.trim() || !eventId || !lotId) {
@@ -45,38 +35,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Selected lot is not valid for this event" }, { status: 400 });
   }
 
-  if (permitType === "purchased") {
-    const isMockPayment = process.env.NEXT_PUBLIC_MOCK_PAYMENTS === "true" && paymentRef.startsWith("mock_");
-
-    if (isMockPayment) {
-      // DEMO ONLY (see /api/stripe/mock-pay) — only reachable when MOCK_PAYMENTS is
-      // explicitly enabled, so this can't be used to skip payment verification once
-      // real Stripe keys are configured and the flag is off.
-      const [, mockEventId] = paymentRef.split("_");
-      if (mockEventId !== eventId) {
-        return NextResponse.json({ error: "Mock payment does not match this event" }, { status: 400 });
-      }
-    } else {
-      // Verify the payment actually succeeded and was for this event, server-side —
-      // never trust a client-supplied paymentRef on its own, or anyone could POST a
-      // fabricated id and get a free permit.
-      let paymentIntent;
-      try {
-        paymentIntent = await stripe.paymentIntents.retrieve(paymentRef);
-      } catch {
-        return NextResponse.json({ error: "Invalid paymentRef" }, { status: 400 });
-      }
-      if (paymentIntent.status !== "succeeded" || paymentIntent.metadata?.eventId !== eventId) {
-        return NextResponse.json({ error: "Payment not verified for this event" }, { status: 400 });
-      }
-    }
-
-    const alreadyUsed = await prisma.permit.findFirst({ where: { paymentRef } });
-    if (alreadyUsed) {
-      return NextResponse.json({ error: "This payment has already been used for a permit" }, { status: 400 });
-    }
-  }
-
   const { validFrom, validUntil } = permitWindowForEvent(event);
 
   const permit = await prisma.permit.create({
@@ -85,9 +43,8 @@ export async function POST(req: Request) {
       eventId,
       lotId,
       nameOnPermit,
-      permitType,
-      paymentRef: paymentRef ?? null,
-      dvPlacardNumber: dvPlacardNumber ?? null,
+      permitType: "dv_exempt",
+      dvPlacardNumber,
       validFrom,
       validUntil,
     },

@@ -10,9 +10,9 @@ things are built this way).
 - Seed script with real UT lots/garages (BRG, CCG, ECG, GUG, HCG, MAG, SAG, SJG, SWG, TRG, TSG,
   plus numbered open lots 37/38/39/40/118 and the LHN Longhorn Lot area)
 - Core screens matching the original wireframes: plate entry → event list → lot picker
-  (when an event has more than one lot) → payment (Stripe, wallet-pay ready — or a demo
-  "mock pay" button, see below) → confirmation with QR code → one-time plate change →
-  self-service refund request
+  (when an event has more than one lot) → Stripe-hosted Checkout (card/Apple Pay/Google
+  Pay/Link) → confirmation with QR code → one-time plate change → self-service refund
+  request
 - DV placard flow: plate + placard number only, no camera/photo step, by design
 - Staff admin tool at `/admin` (placeholder username/password login, NOT for
   production — see `src/lib/staffAuth.ts`): issue staff/comp permits, search/view
@@ -35,14 +35,14 @@ Then log into the admin tool (`/admin` — username/password from `STAFF_DEV_USE
 `STAFF_DEV_PASSWORD` in `.env`, default `longhorn` / `123`) and use "Manage Events" to
 create an event before exercising the public purchase/DV flows.
 
-### Demo mode (no real Stripe keys needed)
-With `NEXT_PUBLIC_MOCK_PAYMENTS="true"` in `.env` (the `.env.example` default), the
-purchase flow shows a "Pay $X.XX (demo)" button instead of real Stripe Elements — click
-it and it mints a fake-but-tracked payment reference, creates the permit, and takes you
-to the confirmation screen, so you can see the full tab flow without Stripe test keys
-or outbound network access. This is fully inert when the flag is unset/false: the mock
-endpoint 404s and a client-supplied `mock_...` paymentRef falls through to real Stripe
-verification and fails. **Never set this flag in an environment with real Stripe keys.**
+### Stripe setup
+Needs `STRIPE_SECRET_KEY` (test mode) and `STRIPE_WEBHOOK_SECRET` — see `.env.example`.
+Locally, run `stripe listen --forward-to localhost:3000/api/stripe/webhook` and use the
+`whsec_...` it prints. In production, point a Stripe Dashboard webhook endpoint at
+`/api/stripe/webhook` listening for `checkout.session.completed` (and, for completeness,
+`checkout.session.async_payment_succeeded`) and use that endpoint's signing secret.
+Pay always redirects to Stripe-hosted Checkout; the permit is created by the webhook,
+never by the browser redirect — see `/api/stripe/webhook` and `/api/stripe/create-checkout-session`.
 
 ## What Claude Code should build next (in rough priority order)
 1. ~~Lot selection on the event page~~ — done.
@@ -55,26 +55,30 @@ verification and fails. **Never set this flag in an environment with real Stripe
 4. ~~Event management~~ — done, under the "Manage Events" tab in `/admin`.
 5. **Deployment packaging** — intentionally not done yet. Per the spec, containerize
    (e.g. Docker) only once the app is fully built and tested end-to-end.
-6. **Real Stripe integration test** — the payment-verification logic (server-side
-   PaymentIntent check, event-metadata match, reuse rejection) is implemented and unit-
-   tested against the mock path, but hasn't been exercised against the real Stripe API
-   from this environment. Needs real test keys and a chance to click through actual
-   card/Apple Pay/Google Pay entry.
+6. ~~Stripe Checkout~~ — done. Pay redirects to Stripe-hosted Checkout
+   (`/api/stripe/create-checkout-session`); the permit is created only by a
+   signature-verified webhook (`/api/stripe/webhook`), never by the browser redirect.
+   Webhook signature verification, dedup, and permit creation are verified locally
+   (self-signed test events — see commit history); `checkout.sessions.create`/
+   `retrieve` themselves need a real network path to Stripe to test, which this sandbox
+   doesn't have — exercise those for real once deployed, using the checklist below.
 7. **Real email for refund requests** — `src/lib/email.ts` is a console.log stub (see
    "Open items" below). Swap in a real provider (Resend, SendGrid, etc.) once UT
    Parking gives us a mailbox/API to send to.
 
 ## Security notes for whoever picks this up next
-- `POST /api/permits` (the public, unauthenticated route used by the purchase/DV
-  flows) only accepts `permitType: 'purchased' | 'dv_exempt'` and verifies a
-  `purchased` permit's Stripe `paymentRef` server-side (status + event metadata,
-  and rejects reuse) before writing anything. `staff_issued` permits can only be
-  created through `POST /api/admin/permits`, which requires the staff session.
+- `POST /api/permits` (the public, unauthenticated route) only ever creates
+  `dv_exempt` permits now. `purchased` permits are created exclusively by the
+  signature-verified Stripe webhook; `staff_issued` only via `POST /api/admin/permits`,
+  which requires the staff session. No client request can mint a `purchased` permit.
+- `Permit.paymentRef` is a unique DB column, so a retried/duplicate webhook delivery
+  for the same payment can never create a second permit (checked first, and the
+  unique constraint backstops any race).
 - The staff/gate session is a placeholder (see `src/lib/staffAuth.ts`): the browser
   only ever holds a hash of the username+password in an httpOnly cookie, never the
   credentials themselves. Still not real auth — don't ship it as-is.
-- `NEXT_PUBLIC_MOCK_PAYMENTS` must stay unset/false anywhere real Stripe keys are
-  configured — see "Demo mode" above.
+- Card numbers/CVC never touch this app — Stripe Checkout collects them on Stripe's
+  own hosted page.
 
 ## Open items from the spec — now resolved (per UT Parking's direction)
 - **Permit expiry rule**: resolved. A permit is valid from 90 minutes before the
