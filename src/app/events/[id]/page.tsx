@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { loadStripe } from "@stripe/stripe-js";
 
 type EventLot = { id: string; name: string; accessType: "OPEN_LOT" | "GATE_ACCESS" };
 type EventDetail = { id: string; name: string; price: number; lots: EventLot[]; endedAt: string | null };
 
-// Screen 3: "Parking for [Event]" — Name + payment, matching the wireframe.
-// Pay redirects to Stripe-hosted Checkout (card/Apple Pay/Google Pay/Link all show up
-// there automatically) and back to /confirmation/pending, which waits for the
+// Screen 3: "Parking for [Event]" — lot pick + payment.
+// Pay mounts Stripe Embedded Checkout on this page (card/Apple Pay/Google Pay/Link show
+// up automatically); Stripe then returns to /confirmation/pending, which waits for the
 // signature-verified webhook to actually create the permit — see
 // /api/stripe/create-checkout-session and /api/stripe/webhook.
 export default function EventDetailPage({ params }: { params: { id: string } }) {
-  const [name, setName] = useState("");
+  const checkoutEl = useRef<HTMLDivElement>(null);
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -33,14 +34,14 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
   const lots = event?.lots ?? [];
 
   const handlePay = async () => {
-    if (!name.trim() || !plate || !selectedLotId) return;
+    if (!plate || !selectedLotId) return;
     setSubmitting(true);
     setError("");
 
     const res = await fetch("/api/stripe/create-checkout-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eventId: params.id, lotId: selectedLotId, licensePlate: plate, nameOnPermit: name }),
+      body: JSON.stringify({ eventId: params.id, lotId: selectedLotId, licensePlate: plate }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -48,7 +49,11 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
       setError(data.error ?? "This event is no longer available. Please go back and pick another.");
       return;
     }
-    window.location.href = data.url; // hand off to Stripe Checkout
+    // Minimal: no retry/unmount handling — a refresh just creates a fresh session; the
+    // webhook's unique paymentRef keeps one payment = one permit.
+    const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+    const checkout = await stripe!.initEmbeddedCheckout({ clientSecret: data.clientSecret });
+    checkout.mount(checkoutEl.current!);
   };
 
   return (
@@ -62,13 +67,6 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
         <p className="text-center text-red-600 font-medium">This event has ended and is no longer accepting payments.</p>
       ) : (
         <>
-          <input
-            className="border-2 border-gray-800 rounded-lg px-4 py-4 w-full mb-4"
-            placeholder="Name of Person"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-
           {lots.length > 1 && (
             <div className="mb-4">
               <p className="text-sm font-medium mb-2">Choose a lot or garage</p>
@@ -91,13 +89,14 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
 
           {error && <p className="text-sm text-red-600 text-center mb-4">{error}</p>}
 
-          <button
+          <div ref={checkoutEl} />
+          {!submitting && <button
             onClick={handlePay}
-            disabled={submitting || !name.trim() || !selectedLotId}
+            disabled={!selectedLotId}
             className="bg-sky-400 hover:bg-sky-500 disabled:opacity-50 text-white font-semibold rounded-full py-4 w-full"
           >
-            {submitting ? "Redirecting…" : event ? `Pay $${(event.price / 100).toFixed(2)}` : "Pay"}
-          </button>
+            {event ? `Pay $${(event.price / 100).toFixed(2)}` : "Pay"}
+          </button>}
 
           <p className="text-sm text-center mt-6">
             <a href={`/events/${params.id}/dv?plate=${encodeURIComponent(plate)}`} className="underline">

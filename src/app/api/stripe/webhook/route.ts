@@ -28,8 +28,8 @@ export async function POST(req: Request) {
   if (session.payment_status !== "paid") return NextResponse.json({ received: true });
 
   const paymentRef = session.payment_intent as string;
-  const { eventId, lotId, licensePlate, nameOnPermit } = session.metadata ?? {};
-  if (!eventId || !lotId || !licensePlate || !nameOnPermit) return NextResponse.json({ received: true });
+  const { eventId, lotId, licensePlate } = session.metadata ?? {};
+  if (!eventId || !lotId || !licensePlate) return NextResponse.json({ received: true });
 
   if (await prisma.permit.findFirst({ where: { paymentRef } })) {
     return NextResponse.json({ received: true }); // already issued by an earlier delivery of this event
@@ -46,7 +46,6 @@ export async function POST(req: Request) {
         licensePlate,
         eventId,
         lotId,
-        nameOnPermit,
         permitType: "purchased",
         paymentRef,
         validFrom,

@@ -3,17 +3,16 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 
 // POST /api/stripe/create-checkout-session
-// body: { eventId, lotId, licensePlate, nameOnPermit }
-// Stripe-hosted Checkout: no card data ever touches our server, and card/Apple Pay/
-// Google Pay/Link show up automatically based on the Dashboard's enabled payment
-// methods — omitting payment_method_types is the documented way to get that, so
-// there's nothing to configure here. Price always comes from `event.price` (DB), never
+// body: { eventId, lotId, licensePlate }
+// Embedded Checkout (ui_mode "embedded"): rendered by Stripe inside our page, so no card
+// data touches our server; card/Apple Pay/Google Pay/Link follow the Dashboard's enabled
+// payment methods (payment_method_types omitted on purpose). Price always comes from `event.price` (DB), never
 // the client. Checkout metadata carries what the webhook needs to create the permit —
 // no separate "pending permit" table required.
 export async function POST(req: Request) {
-  const { eventId, lotId, licensePlate, nameOnPermit } = await req.json();
-  if (!eventId || !lotId || !licensePlate?.trim() || !nameOnPermit?.trim()) {
-    return NextResponse.json({ error: "eventId, lotId, licensePlate, and nameOnPermit are required" }, { status: 400 });
+  const { eventId, lotId, licensePlate } = await req.json();
+  if (!eventId || !lotId || !licensePlate?.trim()) {
+    return NextResponse.json({ error: "eventId, lotId, and licensePlate are required" }, { status: 400 });
   }
 
   const event = await prisma.event.findUnique({ where: { id: eventId } });
@@ -33,6 +32,7 @@ export async function POST(req: Request) {
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
+    ui_mode: "embedded",
     line_items: [
       {
         price_data: {
@@ -43,10 +43,9 @@ export async function POST(req: Request) {
         quantity: 1,
       },
     ],
-    success_url: `${origin}/confirmation/pending?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/events/${eventId}?plate=${encodeURIComponent(plate)}`,
-    metadata: { eventId, lotId, licensePlate: plate, nameOnPermit },
+    return_url: `${origin}/confirmation/pending?session_id={CHECKOUT_SESSION_ID}`,
+    metadata: { eventId, lotId, licensePlate: plate },
   });
 
-  return NextResponse.json({ url: session.url });
+  return NextResponse.json({ clientSecret: session.client_secret });
 }

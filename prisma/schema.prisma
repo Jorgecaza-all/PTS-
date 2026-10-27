@@ -65,7 +65,7 @@ model Permit {
   permitType       PermitType
   eventId          String
   lotId            String
-  nameOnPermit     String
+  nameOnPermit     String       @default("") // customer name no longer collected; default keeps old rows/staff flow valid
   // Validity window per UT Parking policy: event start minus 90 min through event
   // end plus 90 min.
   validFrom        DateTime
