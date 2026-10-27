@@ -38,22 +38,31 @@ export default function EventDetailPage({ params }: { params: { id: string } }) 
     setSubmitting(true);
     setError("");
 
-    const res = await fetch("/api/stripe/create-checkout-session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eventId: params.id, lotId: selectedLotId, licensePlate: plate }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
+    const fail = (msg: string) => {
       setSubmitting(false);
-      setError(data.error ?? "This event is no longer available. Please go back and pick another.");
-      return;
+      setError(msg);
+    };
+    try {
+      const res = await fetch("/api/stripe/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: params.id, lotId: selectedLotId, licensePlate: plate }),
+      });
+      const data = await res.json();
+      if (!res.ok) return fail(data.error ?? "This event is no longer available. Please go back and pick another.");
+      if (!data.clientSecret) return fail("Payment could not be started. Please try again.");
+      // Must be inlined at build time: set it in Vercel BEFORE the build, then redeploy.
+      const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+      if (!key) return fail("Payments are not configured (missing publishable key).");
+      const stripe = await loadStripe(key);
+      if (!stripe) return fail("Payment form failed to load. Please try again.");
+      // Minimal: no unmount handling — a refresh just creates a fresh session; the
+      // webhook's unique paymentRef keeps one payment = one permit.
+      const checkout = await stripe.initEmbeddedCheckout({ clientSecret: data.clientSecret });
+      checkout.mount(checkoutEl.current!);
+    } catch {
+      fail("Payment form failed to load. Please try again."); // no error details: could echo secrets
     }
-    // Minimal: no retry/unmount handling — a refresh just creates a fresh session; the
-    // webhook's unique paymentRef keeps one payment = one permit.
-    const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
-    const checkout = await stripe!.initEmbeddedCheckout({ clientSecret: data.clientSecret });
-    checkout.mount(checkoutEl.current!);
   };
 
   return (
