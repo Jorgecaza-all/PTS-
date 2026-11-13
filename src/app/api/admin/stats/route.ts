@@ -13,13 +13,13 @@ export async function GET(req: Request) {
 
   const [rows, real, events] = await Promise.all([
     prisma.permit.groupBy({ by: ["eventId", "lotId", "permitType"], _count: true }),
-    prisma.permit.groupBy({ by: ["eventId"], where: { paymentRef: { not: null } } }),
+    prisma.permit.groupBy({ by: ["eventId"], where: { livemode: true }, _count: true }),
     prisma.event.findMany({
       orderBy: { startDate: "desc" },
       include: { lots: { include: { lot: true }, orderBy: { lot: { name: "asc" } } } },
     }),
   ]);
-  const realIds = new Set(real.map((r) => r.eventId));
+  const liveBy = new Map(real.map((r) => [r.eventId, r._count]));
   const n = (eventId: string, lotId: string, type: string) =>
     rows.find((r) => r.eventId === eventId && r.lotId === lotId && r.permitType === type)?._count ?? 0;
 
@@ -28,8 +28,10 @@ export async function GET(req: Request) {
       id: e.id,
       name: e.name,
       endedAt: e.endedAt,
-      archivedAt: e.archivedAt,
-      hasRealPayments: realIds.has(e.id),
+      startDate: e.startDate,
+      endDate: e.endDate,
+      price: e.price,
+      livePermits: liveBy.get(e.id) ?? 0,
       lots: e.lots.map((el) => ({
         lotId: el.lotId,
         name: el.lot.name,

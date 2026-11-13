@@ -41,7 +41,8 @@ export async function POST(req: Request) {
   const parkingEvent = await prisma.event.findUnique({ where: { id: eventId } });
   if (!parkingEvent) {
     console.error("webhook: event not found, no permit issued", { session: session.id }); // wrong DB or event deleted
-    return NextResponse.json({ received: true });
+    // Live money must never be dropped: 500 makes Stripe retry (and flags it in the Dashboard); sandbox can be ignored.
+    return NextResponse.json({ received: true }, { status: event.livemode ? 500 : 200 });
   }
 
   const { validFrom, validUntil } = permitWindowForEvent(parkingEvent);
@@ -54,12 +55,13 @@ export async function POST(req: Request) {
         lotId,
         permitType: "purchased",
         paymentRef,
+        livemode: event.livemode,
         validFrom,
         validUntil,
       },
     });
   } catch (e: any) {
-    if (e.code !== "P2002") throw e; // unique paymentRef race with a concurrent retry — permit already exists, fine
+    if (e.code !== "P2002") throw e; // (P2003 = event deleted mid-flight: thrown -> 500 -> Stripe retries, so live payments aren't lost) // unique paymentRef race with a concurrent retry — permit already exists, fine
   }
 
   return NextResponse.json({ received: true });

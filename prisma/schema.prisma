@@ -40,7 +40,6 @@ model Event {
   startDate DateTime
   endDate   DateTime
   price     Int        // flat price in cents, applies to every lot/garage in `lots`
-  archivedAt DateTime? // staff "Archive" — set instead of reset/delete when the event has real (Stripe) payments
   endedAt   DateTime?  // staff "End event" — hides from public list, blocks new permits; existing permits unaffected
   createdAt DateTime   @default(now())
 
@@ -73,6 +72,7 @@ model Permit {
   validFrom        DateTime
   validUntil       DateTime
   plateChanged     Boolean      @default(false) // true once the one-time plate correction has been used
+  livemode         Boolean      @default(false) // Stripe event.livemode — false = sandbox/test payment (deletable), true = live money (never deleted). Pre-existing rows backfill to false: the app only ever ran on test keys.
   paymentRef       String?      @unique // Stripe PaymentIntent id — null for staff_issued/dv_exempt; unique so a retried/duplicate webhook delivery can't create a second permit
   dvPlacardNumber  String?      // only set when permitType = dv_exempt
   status           PermitStatus @default(active)

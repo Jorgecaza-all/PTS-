@@ -524,8 +524,7 @@ function RefundRequests() {
 }
 
 type LotStat = { lotId: string; name: string; capacity: number | null; purchased: number; dv_exempt: number; staff_issued: number };
-type EventStat = { id: string; name: string; endedAt: string | null; archivedAt: string | null; hasRealPayments: boolean; lots: LotStat[] };
-type Action = "reset" | "delete" | "archive";
+type EventStat = { id: string; name: string; startDate: string; endDate: string; price: number; endedAt: string | null; livePermits: number; lots: LotStat[] };
 
 // Donut colors per spec; the empty ring is gray.
 const SLICES = [
@@ -620,93 +619,84 @@ function LotCard({ l, onSave }: { l: LotStat; onSave: (cap: number) => Promise<s
   );
 }
 
-// Per-event, per-lot permit counts. Every action below targets only the selected event.
+// One card per event with its lot cards nested inside; every action/edit is keyed by that event's id.
+function EventCard({ ev, reload }: { ev: EventStat; reload: () => Promise<void> }) {
+  const [confirm, setConfirm] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const call = async (path: string, init: RequestInit) => {
+    const res = await fetch(`/api/admin/events/${ev.id}${path}`, init);
+    const data = await res.json().catch(() => ({}));
+    return res.ok ? data : { error: data.error ?? "Action failed" };
+  };
+  const saveCapacity = async (lotId: string, capacity: number) => {
+    const d = await call(`/lots/${lotId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ capacity }) });
+    if (d.error) return d.error as string;
+    await reload();
+    return null;
+  };
+  const end = async () => {
+    setMsg((await call("/end", { method: "POST" })).error ?? "");
+    await reload();
+  };
+  const del = async () => {
+    const d = await call("", { method: "DELETE" });
+    setConfirm(false);
+    setMsg(d.error ?? (d.liveKept ? `Event kept: ${d.liveKept} live-payment permit(s) can't be deleted. Its demo/sandbox records were removed.` : ""));
+    await reload();
+  };
+
+  return (
+    <div className="border rounded-lg p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-medium">{ev.name}</div>
+        <div className="flex items-center gap-3 shrink-0">
+          {ev.endedAt ? <span className="text-xs font-semibold uppercase text-gray-500">Ended</span> : (
+            <button onClick={end} className="text-xs text-red-600 underline">End Event</button>
+          )}
+          <button onClick={() => setConfirm(true)} className="text-xs text-red-600 underline">Delete Event</button>
+        </div>
+      </div>
+      <div className="text-sm text-gray-600">
+        {new Date(ev.startDate).toLocaleString()} – {new Date(ev.endDate).toLocaleString()} — ${(ev.price / 100).toFixed(2)}
+      </div>
+      <div className="text-xs text-gray-500">{ev.lots.map((l) => l.name).join(", ")}</div>
+      {msg && <p role="alert" className="text-sm text-red-600">{msg}</p>}
+      {ev.lots.map((l) => <LotCard key={l.lotId} l={l} onSave={(c) => saveCapacity(l.lotId, c)} />)}
+
+      {confirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-10" onKeyDown={(e) => e.key === "Escape" && setConfirm(false)}>
+          <div role="alertdialog" aria-modal="true" aria-label="Confirm delete" className="bg-white rounded-lg p-6 max-w-sm w-full flex flex-col gap-4">
+            <p>
+              Permanently delete "{ev.name}"? This removes the event, its lots and capacities, and all its permits and demo/sandbox payment records.
+              {ev.livePermits > 0 && ` ${ev.livePermits} live-payment permit(s) cannot be deleted: the event and those records will be kept.`}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button autoFocus onClick={() => setConfirm(false)} className="px-4 py-2 rounded-full bg-gray-100">Cancel</button>
+              <button onClick={del} className="px-4 py-2 rounded-full bg-red-600 text-white">Delete Event</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Stats() {
   const [events, setEvents] = useState<EventStat[] | null>(null);
-  const [eventId, setEventId] = useState("");
-  const [confirm, setConfirm] = useState<Action | null>(null);
-  const [error, setError] = useState("");
-
   const load = () =>
     fetch("/api/admin/stats").then((r) => r.json()).then((d) => setEvents(Array.isArray(d.events) ? d.events : []));
   useEffect(() => void load(), []);
 
   if (!events) return <p className="text-gray-500 text-center">Loading...</p>;
-  const ev = events.find((e) => e.id === eventId);
-
-  const saveCapacity = async (lotId: string, capacity: number) => {
-    const res = await fetch(`/api/admin/events/${eventId}/lots/${lotId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ capacity }),
-    });
-    if (!res.ok) return (await res.json()).error ?? "Failed to save";
-    await load();
-    return null;
-  };
-
-  const run = async (path: string, method = "POST") => {
-    setError("");
-    const res = await fetch(`/api/admin/events/${eventId}${path}`, { method });
-    setConfirm(null);
-    if (!res.ok) setError((await res.json()).error ?? "Action failed");
-    if (path === "" && res.ok) setEventId("");
-    await load();
-  };
-
-  const confirmText: Record<Action, string> = {
-    reset: `Reset demo data for "${ev?.name}"? This permanently removes all permits and counts for this event. Setup, capacities, prices and status are kept.`,
-    delete: `Delete "${ev?.name}"? This permanently removes the event, its lot setup and capacities, and all its demo permits.`,
-    archive: `Archive "${ev?.name}"? It will be ended; all permits and payment records are kept.`,
-  };
-  const go = { reset: () => run("/reset"), delete: () => run("", "DELETE"), archive: () => run("/archive") };
-
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <h3 className="font-medium">Permit Counts</h3>
+        <h3 className="font-medium">Existing Events</h3>
         <button onClick={load} className="text-sm underline text-gray-600">Refresh</button>
       </div>
-      <select aria-label="Event" className="border-2 border-gray-800 rounded-lg px-4 py-4" value={eventId}
-        onChange={(e) => { setEventId(e.target.value); setError(""); }}>
-        <option value="">Select an event</option>
-        {events.map((e) => (
-          <option key={e.id} value={e.id}>{e.name}{e.archivedAt ? " (archived)" : e.endedAt ? " (ended)" : ""}</option>
-        ))}
-      </select>
-
-      {ev && (
-        <>
-          <div className="flex flex-wrap gap-2">
-            {!ev.endedAt && <button onClick={() => run("/end")} className="px-3 py-2 rounded-full bg-gray-100 text-sm">End</button>}
-            {ev.hasRealPayments ? (
-              !ev.archivedAt && <button onClick={() => setConfirm("archive")} className="px-3 py-2 rounded-full bg-gray-100 text-sm">Archive</button>
-            ) : (
-              <>
-                <button onClick={() => setConfirm("reset")} className="px-3 py-2 rounded-full bg-gray-100 text-sm">Reset Demo</button>
-                <button onClick={() => setConfirm("delete")} className="px-3 py-2 rounded-full bg-gray-100 text-sm text-red-700">Delete</button>
-              </>
-            )}
-          </div>
-          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-          {ev.lots.length === 0 && <p className="text-gray-500 text-center">No lots on this event.</p>}
-          {ev.lots.map((l) => (
-            <LotCard key={ev.id + l.lotId} l={l} onSave={(c) => saveCapacity(l.lotId, c)} />
-          ))}
-        </>
-      )}
-
-      {ev && confirm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4" onKeyDown={(e) => e.key === "Escape" && setConfirm(null)}>
-          <div role="alertdialog" aria-modal="true" aria-label="Confirm" className="bg-white rounded-lg p-6 max-w-sm w-full flex flex-col gap-4">
-            <p>{confirmText[confirm]}</p>
-            <div className="flex gap-2 justify-end">
-              <button autoFocus onClick={() => setConfirm(null)} className="px-4 py-2 rounded-full bg-gray-100">Cancel</button>
-              <button onClick={go[confirm]} className="px-4 py-2 rounded-full bg-red-600 text-white capitalize">
-                {confirm === "reset" ? "Reset Demo" : confirm}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {events.length === 0 && <p className="text-gray-500 text-center">No events yet.</p>}
+      {events.map((e) => <EventCard key={e.id} ev={e} reload={load} />)}
     </div>
   );
 }
