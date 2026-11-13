@@ -1,0 +1,2 @@
+ALTER TABLE "EventLot" ADD COLUMN "capacity" INTEGER;
+ALTER TABLE "Event" ADD COLUMN "archivedAt" TIMESTAMP(3);

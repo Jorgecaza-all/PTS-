@@ -40,6 +40,7 @@ model Event {
   startDate DateTime
   endDate   DateTime
   price     Int        // flat price in cents, applies to every lot/garage in `lots`
+  archivedAt DateTime? // staff "Archive" — set instead of reset/delete when the event has real (Stripe) payments
   endedAt   DateTime?  // staff "End event" — hides from public list, blocks new permits; existing permits unaffected
   createdAt DateTime   @default(now())
 
@@ -52,6 +53,7 @@ model EventLot {
   id      String @id @default(cuid())
   eventId String
   lotId   String
+  capacity Int? // admin-set spaces for this event+lot; null = unset
 
   event Event @relation(fields: [eventId], references: [id])
   lot   Lot   @relation(fields: [lotId], references: [id])
