@@ -28,15 +28,21 @@ export async function POST(req: Request) {
   if (session.payment_status !== "paid") return NextResponse.json({ received: true });
 
   const paymentRef = session.payment_intent as string;
-  const { eventId, lotId, licensePlate, nameOnPermit } = session.metadata ?? {};
-  if (!eventId || !lotId || !licensePlate || !nameOnPermit) return NextResponse.json({ received: true });
+  const { eventId, lotId, licensePlate } = session.metadata ?? {};
+  if (!eventId || !lotId || !licensePlate) {
+    console.error("webhook: paid session missing metadata, no permit issued", { session: session.id }); // 200 still: a retry can't fix it
+    return NextResponse.json({ received: true });
+  }
 
   if (await prisma.permit.findFirst({ where: { paymentRef } })) {
     return NextResponse.json({ received: true }); // already issued by an earlier delivery of this event
   }
 
   const parkingEvent = await prisma.event.findUnique({ where: { id: eventId } });
-  if (!parkingEvent) return NextResponse.json({ received: true }); // nothing sane to do — event gone
+  if (!parkingEvent) {
+    console.error("webhook: event not found, no permit issued", { session: session.id }); // wrong DB or event deleted
+    return NextResponse.json({ received: true });
+  }
 
   const { validFrom, validUntil } = permitWindowForEvent(parkingEvent);
 
@@ -46,7 +52,6 @@ export async function POST(req: Request) {
         licensePlate,
         eventId,
         lotId,
-        nameOnPermit,
         permitType: "purchased",
         paymentRef,
         validFrom,

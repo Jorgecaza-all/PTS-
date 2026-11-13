@@ -9,7 +9,6 @@ type EventLot = { id: string; name: string; accessType: "OPEN_LOT" | "GATE_ACCES
 // Explicitly no camera/photo step per product decision: the target users skew older
 // and any added step risks losing them at the exact friction point this app removes.
 export default function DvPlacardPage({ params }: { params: { id: string } }) {
-  const [name, setName] = useState("");
   const [placardNumber, setPlacardNumber] = useState("");
   const [lots, setLots] = useState<EventLot[]>([]);
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
@@ -28,7 +27,7 @@ export default function DvPlacardPage({ params }: { params: { id: string } }) {
   }, [params.id]);
 
   const handleConfirm = async () => {
-    if (!name.trim() || !placardNumber.trim() || !plate || !selectedLotId) return;
+    if (!placardNumber.trim() || !plate || !selectedLotId) return;
     setError("");
 
     const res = await fetch("/api/permits", {
@@ -38,7 +37,6 @@ export default function DvPlacardPage({ params }: { params: { id: string } }) {
         licensePlate: plate,
         eventId: params.id,
         lotId: selectedLotId,
-        nameOnPermit: name,
         permitType: "dv_exempt",
         dvPlacardNumber: placardNumber,
       }),
@@ -57,12 +55,6 @@ export default function DvPlacardPage({ params }: { params: { id: string } }) {
         ← Back
       </a>
       <h2 className="text-xl font-semibold text-center mb-2">DV Placard Parking</h2>
-      <input
-        className="border-2 border-gray-800 rounded-lg px-4 py-4"
-        placeholder="Name of Person"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
       <input
         className="border-2 border-gray-800 rounded-lg px-4 py-4"
         placeholder="DV Placard Number"

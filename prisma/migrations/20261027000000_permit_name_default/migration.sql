@@ -1,0 +1,1 @@
+ALTER TABLE "Permit" ALTER COLUMN "nameOnPermit" SET DEFAULT '';

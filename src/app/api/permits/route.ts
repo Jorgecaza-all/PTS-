@@ -6,9 +6,9 @@ import { permitWindowForEvent } from "@/lib/permits";
 // Public write path for the DV placard flow only. "purchased" permits are created
 // exclusively by the signature-verified Stripe webhook (see /api/stripe/webhook) —
 // never from a client request — and "staff_issued" only via /api/admin/permits.
-// body: { licensePlate, eventId, lotId, nameOnPermit, permitType: 'dv_exempt', dvPlacardNumber }
+// body: { licensePlate, eventId, lotId, permitType: 'dv_exempt', dvPlacardNumber }
 export async function POST(req: Request) {
-  const { licensePlate, eventId, lotId, nameOnPermit, permitType, dvPlacardNumber } = await req.json();
+  const { licensePlate, eventId, lotId, permitType, dvPlacardNumber } = await req.json();
 
   if (permitType !== "dv_exempt") {
     return NextResponse.json({ error: "Invalid permitType" }, { status: 400 });
@@ -16,8 +16,8 @@ export async function POST(req: Request) {
   if (!dvPlacardNumber?.trim()) {
     return NextResponse.json({ error: "dvPlacardNumber required for DV permits" }, { status: 400 });
   }
-  if (!licensePlate?.trim() || !nameOnPermit?.trim() || !eventId || !lotId) {
-    return NextResponse.json({ error: "licensePlate, nameOnPermit, eventId, and lotId are required" }, { status: 400 });
+  if (!licensePlate?.trim() || !eventId || !lotId) {
+    return NextResponse.json({ error: "licensePlate, eventId, and lotId are required" }, { status: 400 });
   }
 
   const event = await prisma.event.findUnique({ where: { id: eventId } });
@@ -42,7 +42,6 @@ export async function POST(req: Request) {
       licensePlate: licensePlate.toUpperCase(),
       eventId,
       lotId,
-      nameOnPermit,
       permitType: "dv_exempt",
       dvPlacardNumber,
       validFrom,
